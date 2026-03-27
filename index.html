@@ -123,6 +123,7 @@
         .name-list-btn:hover { background: var(--color-bg-gray); border-color: var(--color-blue-600); }
         .name-list-btn.clear-btn { grid-column: 1 / -1; background-color: #fff5f5; color: var(--color-error-main); border-color: var(--color-error-main); margin-bottom: 8px; }
 
+        /* 初期表示は非表示 */
         #maintenanceArea { display: none; }
     </style>
 </head>
@@ -173,7 +174,7 @@
 </div>
 
 <script>
-    const STORAGE_KEY = 'seat_system_free_v29_stable';
+    const STORAGE_KEY = 'seat_system_v30_dynamic';
     let names = {}; let pos = {}; let currentOccupants = {};
     let counts = { shomu: 0, general: 15 };
     let activeSeatId = null;
@@ -186,17 +187,27 @@
             counts = d.counts || { shomu: 0, general: 15 };
             currentOccupants = d.currentOccupants || {};
         }
-        renderMaint(); syncSeats(); updateTimestamp();
+        renderMaint(); 
+        syncSeats(); 
+        updateTimestamp();
     }
 
+    // 設定ボタンの1回目反応を修正
     function toggleMaintenance() {
         const area = document.getElementById('maintenanceArea');
-        area.style.display = (area.style.display === 'none') ? 'block' : 'none';
+        // 明示的なスタイルの取得
+        const currentDisplay = window.getComputedStyle(area).display;
+        if (currentDisplay === 'none') {
+            area.style.display = 'block';
+        } else {
+            area.style.display = 'none';
+        }
     }
 
     function changeCount(role, delta) {
-        counts[role] = Math.max(0, Math.min(40, counts[role] + delta));
-        renderMaint(); syncSeats();
+        counts[role] = Math.max(0, Math.min(60, counts[role] + delta));
+        renderMaint(); 
+        syncSeats(); // 職員数に連動して座席を再生成
     }
 
     function renderMaint() {
@@ -208,30 +219,43 @@
             let items = '';
             for(let i=1; i<=n; i++) {
                 const id = `${role.k}-${i}`;
-                items += `<input type="text" placeholder="${role.l}${i}" value="${names[id] || ''}" onchange="names['${id}']=this.value">`;
+                items += `<input type="text" placeholder="${role.l}${i}" value="${names[id] || ''}" onchange="updateName('${id}', this.value)">`;
             }
             container.innerHTML += `
                 <div class="role-group" style="margin-bottom: var(--s-24);">
                     <div class="role-header">
                         <h2>${role.l} 名簿（${n}名）</h2>
-                        <div><button class="btn-secondary btn-count" onclick="changeCount('${role.k}', 1)">＋</button><button class="btn-secondary btn-count" onclick="changeCount('${role.k}', -1)">－</button></div>
+                        <div>
+                            <button class="btn-secondary btn-count" onclick="changeCount('${role.k}', 1)">＋</button>
+                            <button class="btn-secondary btn-count" onclick="changeCount('${role.k}', -1)">－</button>
+                        </div>
                     </div>
                     <div class="input-grid">${items}</div>
                 </div>`;
         });
     }
 
+    function updateName(id, val) {
+        names[id] = val;
+    }
+
+    // 座席指定ボックスを職員数に連動
     function syncSeats() {
         const area = document.getElementById('seatArea');
         area.innerHTML = '';
-        const totalSeats = 20; 
-        for(let i=1; i<=totalSeats; i++) {
+        
+        // 合計人数を算出
+        const totalPeopleCount = counts.shomu + counts.general;
+        
+        for(let i=1; i<=totalPeopleCount; i++) {
             const seatId = `seat-${i}`;
             const el = document.createElement('div');
             el.className = 'seat' + (currentOccupants[seatId] ? ' occupied' : '');
             el.id = seatId;
             const occupantName = currentOccupants[seatId] || '---';
             el.innerHTML = `<div class="seat-label">座席 ${i}</div><div class="seat-name">${occupantName}</div>`;
+            
+            // 位置の復元（なければグリッド配置）
             el.style.left = pos[seatId]?.left || (5 + ((i-1) % 5) * 18) + "%";
             el.style.top = pos[seatId]?.top || (5 + Math.floor((i-1) / 5) * 18) + "%";
             
@@ -246,6 +270,7 @@
         container.innerHTML = '';
         const alreadySeated = Object.values(currentOccupants);
         const currentInThisSeat = currentOccupants[seatId];
+        
         Object.values(names).forEach(name => {
             if(!name) return;
             if(alreadySeated.includes(name) && name !== currentInThisSeat) return; 
@@ -266,7 +291,6 @@
         saveCurrentState(); syncSeats(); closeModal(); updateTimestamp();
     }
 
-    // ドラッグとクリックを分離する改良版
     function makeDraggableAndClickable(el, id) {
         let isDragging = false;
         let startX, startY;
@@ -287,7 +311,6 @@
             const dx = Math.abs(c.clientX - startX);
             const dy = Math.abs(c.clientY - startY);
             
-            // 5px以上動いたら「移動」とみなす
             if (dx > 5 || dy > 5) {
                 moved = true;
                 const rect = document.getElementById('seatArea').getBoundingClientRect();
@@ -304,24 +327,20 @@
             el.classList.remove('active');
 
             if (moved) {
-                // 移動が発生した場合のみ位置を保存
                 const snap = 2.5;
                 el.style.left = Math.round(parseFloat(el.style.left) / snap) * snap + "%";
                 el.style.top = Math.round(parseFloat(el.style.top) / snap) * snap + "%";
                 pos[id] = { left: el.style.left, top: el.style.top };
                 saveCurrentState();
             } else {
-                // 移動していなければ「クリック」として扱う
                 openModal(id);
             }
         };
 
         el.addEventListener('mousedown', onStart);
         el.addEventListener('touchstart', onStart, { passive: true });
-        
         document.addEventListener('mousemove', onMove);
         document.addEventListener('touchmove', onMove, { passive: false });
-        
         document.addEventListener('mouseup', onEnd);
         document.addEventListener('touchend', onEnd);
     }
