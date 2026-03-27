@@ -74,7 +74,6 @@
 
         .controls-main { display: flex; justify-content: flex-start; gap: var(--s-16); margin: var(--s-24) 0; }
 
-        /* 座席エリア */
         .seat-area-wrapper {
             width: 100%; position: relative; padding-top: 56.25%;
             background: #ffffff; border: 4px solid var(--color-border-main);
@@ -106,15 +105,33 @@
 
         .modal-content {
             background-color: #fff; padding: var(--s-24); border-radius: 4px;
-            width: 90%; max-width: 500px; max-height: 80vh; overflow-y: auto;
+            width: 95%; max-width: 600px; max-height: 85vh; overflow-y: auto;
+        }
+
+        /* 社員リストのグリッド表示 */
+        .name-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+            gap: 12px;
+            margin: 20px 0;
         }
 
         .name-list-btn {
-            width: 100%; text-align: left; padding: 12px; margin-bottom: 8px;
-            border: 1px solid #ccc; background: #fff; cursor: pointer; font-size: 1rem;
+            text-align: center; padding: 12px 8px;
+            border: 1px solid #ccc; background: #fff; cursor: pointer; font-size: 0.95rem;
+            font-weight: 700; border-radius: 4px;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
         }
 
         .name-list-btn:hover { background: var(--color-bg-gray); border-color: var(--color-blue-600); }
+        
+        .name-list-btn.clear-btn {
+            grid-column: 1 / -1; /* 一列全部使う */
+            background-color: #fff5f5;
+            color: var(--color-error-main);
+            border-color: var(--color-error-main);
+            margin-bottom: 8px;
+        }
 
         #maintenanceArea { display: none; }
     </style>
@@ -123,8 +140,8 @@
 
 <div class="container">
     <header>
-        <h1>座席管理システム (フリーアドレス)</h1>
-        <button id="maintToggleBtn" class="btn-secondary" onclick="toggleMaintenance()">設定・名簿</button>
+        <h1>座席管理システム</h1>
+        <button id="maintToggleBtn" class="btn-secondary" onclick="toggleMaintenance()">設定</button>
     </header>
 
     <div id="maintenanceArea">
@@ -150,13 +167,18 @@
 <div id="nameModal" class="modal">
     <div class="modal-content">
         <h2 style="margin-top:0; border-bottom: 2px solid var(--color-blue-600); padding-bottom: 8px;">利用者を選択</h2>
-        <div id="nameChoices"></div>
-        <button class="btn-danger" style="width:100%; margin-top:16px;" onclick="closeModal()">キャンセル</button>
+        
+        <div class="name-grid">
+            <button class="name-list-btn clear-btn" onclick="selectName('')">× この席を空ける (または選択解除)</button>
+            <div id="nameChoices" style="display: contents;"></div>
+        </div>
+        
+        <button class="btn-secondary" style="width:100%;" onclick="closeModal()">閉じる</button>
     </div>
 </div>
 
 <script>
-    const STORAGE_KEY = 'seat_system_free_address';
+    const STORAGE_KEY = 'seat_system_free_v27';
     let names = {}; let pos = {}; let currentOccupants = {};
     let counts = { shomu: 0, general: 15 };
     let activeSeatId = null;
@@ -174,8 +196,7 @@
 
     function toggleMaintenance() {
         const area = document.getElementById('maintenanceArea');
-        const isHidden = area.style.display === 'none';
-        area.style.display = isHidden ? 'block' : 'none';
+        area.style.display = (area.style.display === 'none') ? 'block' : 'none';
     }
 
     function changeCount(role, delta) {
@@ -208,7 +229,7 @@
     function syncSeats() {
         const area = document.getElementById('seatArea');
         area.innerHTML = '';
-        const totalSeats = 20; // デフォルトの座席数（必要に応じて調整可能）
+        const totalSeats = 20; 
         
         for(let i=1; i<=totalSeats; i++) {
             const seatId = `seat-${i}`;
@@ -217,15 +238,9 @@
             el.id = seatId;
             const occupantName = currentOccupants[seatId] || '---';
             el.innerHTML = `<div class="seat-label">座席 ${i}</div><div class="seat-name">${occupantName}</div>`;
-            
-            // 配置設定
             el.style.left = pos[seatId]?.left || (5 + ((i-1) % 5) * 18) + "%";
             el.style.top = pos[seatId]?.top || (5 + Math.floor((i-1) / 5) * 18) + "%";
-            
-            // タップイベント
             el.onclick = () => openModal(seatId);
-            
-            // ドラッグ（管理者モード等の区別なく移動可能に設定）
             makeDraggable(el, seatId);
             area.appendChild(el);
         }
@@ -236,17 +251,19 @@
         const container = document.getElementById('nameChoices');
         container.innerHTML = '';
         
-        // 「空席にする」選択肢
-        const clearBtn = document.createElement('button');
-        clearBtn.className = 'name-list-btn';
-        clearBtn.style.color = 'var(--color-error-main)';
-        clearBtn.innerText = '× この席を空ける';
-        clearBtn.onclick = () => selectName('');
-        container.appendChild(clearBtn);
+        // 現在他の席に座っている社員のリストを作成
+        const alreadySeated = Object.values(currentOccupants);
+        const currentInThisSeat = currentOccupants[seatId];
 
         // 名簿から選択肢を生成
         Object.values(names).forEach(name => {
             if(!name) return;
+            
+            // すでに他の席に座っている人は表示しない（ただし、今この席に座っている本人は表示する）
+            if(alreadySeated.includes(name) && name !== currentInThisSeat) {
+                return; 
+            }
+
             const btn = document.createElement('button');
             btn.className = 'name-list-btn';
             btn.innerText = name;
