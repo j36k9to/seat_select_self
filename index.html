@@ -90,7 +90,6 @@
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
 
-        /* 席の見た目を全タイプ共通に統一 */
         .seat:hover { background-color: var(--color-bg-gray); }
         .seat.active { box-shadow: 0 0 0 4px var(--color-focus-yellow); z-index: 100; }
         .seat.occupied { background-color: #e6f2ff; border-color: var(--color-blue-600); }
@@ -174,7 +173,7 @@
 </div>
 
 <script>
-    const STORAGE_KEY = 'seat_system_v32_unified_color';
+    const STORAGE_KEY = 'seat_system_v33_final';
     let names = { shomu: {}, general: {} }; 
     let pos = {}; 
     let currentOccupants = {};
@@ -184,11 +183,13 @@
     function init() {
         const saved = localStorage.getItem(STORAGE_KEY);
         if (saved) {
-            const d = JSON.parse(saved);
-            pos = d.pos || {}; 
-            names = d.names || { shomu: {}, general: {} }; 
-            counts = d.counts || { shomu: 0, general: 15 };
-            currentOccupants = d.currentOccupants || {};
+            try {
+                const d = JSON.parse(saved);
+                pos = d.pos || {}; 
+                names = d.names || { shomu: {}, general: {} }; 
+                counts = d.counts || { shomu: 0, general: 15 };
+                currentOccupants = d.currentOccupants || {};
+            } catch(e) { console.error("Data load error", e); }
         }
         renderMaint(); 
         syncSeats(); 
@@ -214,6 +215,9 @@
         roles.forEach(role => {
             const n = counts[role.k];
             let items = '';
+            // names[role.k] が未定義にならないよう空オブジェクトを保証
+            if(!names[role.k]) names[role.k] = {};
+            
             for(let i=1; i<=n; i++) {
                 const id = `${role.k}-${i}`;
                 items += `<input type="text" placeholder="${role.l}${i}" value="${names[role.k][id] || ''}" onchange="names['${role.k}']['${id}']=this.value">`;
@@ -245,7 +249,6 @@
 
     function createSeat(parent, id, label, type) {
         const el = document.createElement('div');
-        // クラス名を統合し、見た目を統一
         el.className = `seat` + (currentOccupants[id] ? ' occupied' : '');
         el.id = id;
         const occupantName = currentOccupants[id] || '---';
@@ -267,7 +270,7 @@
         title.innerText = (type === 'shomu') ? '庶務担当者を選択' : '一般職員を選択';
         const alreadySeated = Object.values(currentOccupants);
         const currentInThisSeat = currentOccupants[seatId];
-        const targetNames = names[type];
+        const targetNames = names[type] || {};
         Object.values(targetNames).forEach(name => {
             if(!name) return;
             if(alreadySeated.includes(name) && name !== currentInThisSeat) return; 
@@ -359,15 +362,25 @@
     }
 
     function importConfig(input) {
+        if (!input.files[0]) return;
         const reader = new FileReader();
         reader.onload = (e) => {
             try {
                 const d = JSON.parse(e.target.result);
-                pos = d.pos || {}; names = d.names || {shomu:{}, general:{}}; 
-                counts = d.counts || {shomu:0, general:15};
+                // データのマッピング（新旧フォーマット互換性考慮）
+                pos = d.pos || {}; 
+                names = d.names || { shomu: {}, general: {} }; 
+                counts = d.counts || { shomu: 0, general: 15 };
                 currentOccupants = d.currentOccupants || {};
-                saveCurrentState(); location.reload();
-            } catch (err) { alert("有効なJSONファイルではありません。"); }
+                
+                // localStorageへ即時反映してリロード
+                saveCurrentState();
+                alert("データの読み込みが完了しました。");
+                location.reload(); 
+            } catch (err) { 
+                alert("有効なJSONファイルではありません。内容を確認してください。"); 
+                console.error(err);
+            }
         };
         reader.readAsText(input.files[0]);
     }
