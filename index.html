@@ -152,7 +152,7 @@
     </div>
 
     <div class="controls-main">
-        <button class="btn-secondary" onclick="clearAllSeats()">全席を空席にする</button>
+        <button class="btn-secondary" onclick="clearAllSeats()">一般席のみ空席にする</button>
         <div id="drawTimestamp" style="align-self:center; font-size:0.9rem; font-weight:700; margin-left:auto;"></div>
     </div>
 
@@ -173,7 +173,7 @@
 </div>
 
 <script>
-    const STORAGE_KEY = 'seat_system_v33_final';
+    const STORAGE_KEY = 'seat_system_v34_shomu_keep';
     let names = { shomu: {}, general: {} }; 
     let pos = {}; 
     let currentOccupants = {};
@@ -215,9 +215,7 @@
         roles.forEach(role => {
             const n = counts[role.k];
             let items = '';
-            // names[role.k] が未定義にならないよう空オブジェクトを保証
             if(!names[role.k]) names[role.k] = {};
-            
             for(let i=1; i<=n; i++) {
                 const id = `${role.k}-${i}`;
                 items += `<input type="text" placeholder="${role.l}${i}" value="${names[role.k][id] || ''}" onchange="names['${role.k}']['${id}']=this.value">`;
@@ -253,11 +251,9 @@
         el.id = id;
         const occupantName = currentOccupants[id] || '---';
         el.innerHTML = `<div class="seat-label">${label}</div><div class="seat-name">${occupantName}</div>`;
-        
         const index = Array.from(parent.children).length;
         el.style.left = pos[id]?.left || (5 + (index % 5) * 18) + "%";
         el.style.top = pos[id]?.top || (5 + Math.floor(index / 5) * 18) + "%";
-        
         makeDraggableAndClickable(el, id, type);
         parent.appendChild(el);
     }
@@ -337,9 +333,20 @@
         document.addEventListener('touchend', onEnd);
     }
 
+    // 庶務席だけ残すように修正
     function clearAllSeats() {
-        if(confirm('すべての座席を空席にしますか？')) {
-            currentOccupants = {}; saveCurrentState(); syncSeats(); updateTimestamp();
+        if(confirm('一般職員の座席のみ空席にしますか？（庶務席は維持されます）')) {
+            const nextOccupants = {};
+            // 現在の着席者から「庶務席(shomu-)」だけを抽出して新オブジェクトにコピー
+            for (const seatId in currentOccupants) {
+                if (seatId.startsWith('shomu-')) {
+                    nextOccupants[seatId] = currentOccupants[seatId];
+                }
+            }
+            currentOccupants = nextOccupants; 
+            saveCurrentState(); 
+            syncSeats(); 
+            updateTimestamp();
         }
     }
 
@@ -367,20 +374,14 @@
         reader.onload = (e) => {
             try {
                 const d = JSON.parse(e.target.result);
-                // データのマッピング（新旧フォーマット互換性考慮）
                 pos = d.pos || {}; 
                 names = d.names || { shomu: {}, general: {} }; 
                 counts = d.counts || { shomu: 0, general: 15 };
                 currentOccupants = d.currentOccupants || {};
-                
-                // localStorageへ即時反映してリロード
                 saveCurrentState();
                 alert("データの読み込みが完了しました。");
                 location.reload(); 
-            } catch (err) { 
-                alert("有効なJSONファイルではありません。内容を確認してください。"); 
-                console.error(err);
-            }
+            } catch (err) { alert("有効なJSONファイルではありません。"); }
         };
         reader.readAsText(input.files[0]);
     }
