@@ -12,11 +12,11 @@
     <style>
         :root {
             --color-blue-600: #0055aa;
-            --color-red-600: #d43d35;
             --color-text-main: #1a1a1a;
             --color-text-sub: #4d4d4d;
             --color-bg-gray: #f2f2f2;
             --color-border-main: #212121;
+            --color-error-main: #d43d35;
             --color-focus-yellow: #ffdd00;
             --font-family: 'BIZ UDPGothic', sans-serif;
             --s-8: 8px; --s-16: 16px; --s-24: 24px; --s-32: 32px;
@@ -69,7 +69,7 @@
 
         .btn-primary { background-color: var(--color-blue-600); color: #ffffff; }
         .btn-secondary { background-color: #ffffff; border-color: var(--color-border-main); color: var(--color-text-main); }
-        .btn-danger { background-color: #ffffff; border-color: var(--color-red-600); color: var(--color-red-600); }
+        .btn-danger { background-color: #ffffff; border-color: var(--color-error-main); color: var(--color-error-main); }
         .btn-count { min-height: 40px; min-width: 40px; padding: 0; margin-left: var(--s-8); font-size: 1.25rem; }
 
         .controls-main { display: flex; justify-content: flex-start; gap: var(--s-16); margin: var(--s-24) 0; }
@@ -90,14 +90,10 @@
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
 
-        /* 庶務席の見た目を少し変える */
-        .seat.type-shomu { border-color: var(--color-red-600); border-width: 3px; }
-        .seat.type-shomu .seat-label { color: var(--color-red-600); font-weight: 700; }
-
+        /* 席の見た目を全タイプ共通に統一 */
         .seat:hover { background-color: var(--color-bg-gray); }
         .seat.active { box-shadow: 0 0 0 4px var(--color-focus-yellow); z-index: 100; }
         .seat.occupied { background-color: #e6f2ff; border-color: var(--color-blue-600); }
-        .seat.type-shomu.occupied { background-color: #fff0f0; border-color: var(--color-red-600); }
 
         .seat-label { font-size: 0.7rem; color: var(--color-text-sub); pointer-events: none; margin-bottom: 2px; }
         .seat-name { font-size: 1.1rem; font-weight: 700; pointer-events: none; text-align: center; line-height: 1.2; width: 90%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -126,7 +122,7 @@
         }
 
         .name-list-btn:hover { background: var(--color-bg-gray); border-color: var(--color-blue-600); }
-        .name-list-btn.clear-btn { grid-column: 1 / -1; background-color: #fff5f5; color: var(--color-red-600); border-color: var(--color-red-600); margin-bottom: 8px; }
+        .name-list-btn.clear-btn { grid-column: 1 / -1; background-color: #fff5f5; color: var(--color-error-main); border-color: var(--color-error-main); margin-bottom: 8px; }
 
         #maintenanceArea { display: none; }
     </style>
@@ -135,7 +131,7 @@
 
 <div class="container">
     <header>
-        <h1>座席管理システム (役割別)</h1>
+        <h1>座席管理システム</h1>
         <button id="maintToggleBtn" class="btn-secondary" onclick="toggleMaintenance()">設定</button>
     </header>
 
@@ -178,7 +174,7 @@
 </div>
 
 <script>
-    const STORAGE_KEY = 'seat_system_v31_role_split';
+    const STORAGE_KEY = 'seat_system_v32_unified_color';
     let names = { shomu: {}, general: {} }; 
     let pos = {}; 
     let currentOccupants = {};
@@ -239,12 +235,9 @@
     function syncSeats() {
         const area = document.getElementById('seatArea');
         area.innerHTML = '';
-        
-        // 庶務席の生成
         for(let i=1; i<=counts.shomu; i++) {
             createSeat(area, `shomu-${i}`, `庶務席 ${i}`, 'shomu');
         }
-        // 一般席の生成
         for(let i=1; i<=counts.general; i++) {
             createSeat(area, `gen-${i}`, `座席 ${i}`, 'general');
         }
@@ -252,12 +245,12 @@
 
     function createSeat(parent, id, label, type) {
         const el = document.createElement('div');
-        el.className = `seat type-${type}` + (currentOccupants[id] ? ' occupied' : '');
+        // クラス名を統合し、見た目を統一
+        el.className = `seat` + (currentOccupants[id] ? ' occupied' : '');
         el.id = id;
         const occupantName = currentOccupants[id] || '---';
         el.innerHTML = `<div class="seat-label">${label}</div><div class="seat-name">${occupantName}</div>`;
         
-        // デフォルト位置の計算（庶務席を優先的に並べる）
         const index = Array.from(parent.children).length;
         el.style.left = pos[id]?.left || (5 + (index % 5) * 18) + "%";
         el.style.top = pos[id]?.top || (5 + Math.floor(index / 5) * 18) + "%";
@@ -271,13 +264,9 @@
         const container = document.getElementById('nameChoices');
         const title = document.getElementById('modalTitle');
         container.innerHTML = '';
-        
         title.innerText = (type === 'shomu') ? '庶務担当者を選択' : '一般職員を選択';
-        
         const alreadySeated = Object.values(currentOccupants);
         const currentInThisSeat = currentOccupants[seatId];
-        
-        // 該当するタイプのリストのみ表示
         const targetNames = names[type];
         Object.values(targetNames).forEach(name => {
             if(!name) return;
@@ -303,14 +292,12 @@
         let isDragging = false;
         let startX, startY;
         let moved = false;
-
         const onStart = (e) => {
             isDragging = true; moved = false;
             const c = e.type.includes('touch') ? e.touches[0] : e;
             startX = c.clientX; startY = c.clientY;
             el.classList.add('active');
         };
-
         const onMove = (e) => {
             if (!isDragging) return;
             const c = e.type.includes('touch') ? e.touches[0] : e;
@@ -325,7 +312,6 @@
                 el.style.top = Math.max(0, Math.min(yP, 87)) + "%";
             }
         };
-
         const onEnd = () => {
             if (!isDragging) return;
             isDragging = false;
@@ -340,7 +326,6 @@
                 openModal(id, type);
             }
         };
-
         el.addEventListener('mousedown', onStart);
         el.addEventListener('touchstart', onStart, { passive: true });
         document.addEventListener('mousemove', onMove);
