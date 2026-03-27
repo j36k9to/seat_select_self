@@ -12,11 +12,11 @@
     <style>
         :root {
             --color-blue-600: #0055aa;
+            --color-red-600: #d43d35;
             --color-text-main: #1a1a1a;
             --color-text-sub: #4d4d4d;
             --color-bg-gray: #f2f2f2;
             --color-border-main: #212121;
-            --color-error-main: #d43d35;
             --color-focus-yellow: #ffdd00;
             --font-family: 'BIZ UDPGothic', sans-serif;
             --s-8: 8px; --s-16: 16px; --s-24: 24px; --s-32: 32px;
@@ -69,7 +69,7 @@
 
         .btn-primary { background-color: var(--color-blue-600); color: #ffffff; }
         .btn-secondary { background-color: #ffffff; border-color: var(--color-border-main); color: var(--color-text-main); }
-        .btn-danger { background-color: #ffffff; border-color: var(--color-error-main); color: var(--color-error-main); }
+        .btn-danger { background-color: #ffffff; border-color: var(--color-red-600); color: var(--color-red-600); }
         .btn-count { min-height: 40px; min-width: 40px; padding: 0; margin-left: var(--s-8); font-size: 1.25rem; }
 
         .controls-main { display: flex; justify-content: flex-start; gap: var(--s-16); margin: var(--s-24) 0; }
@@ -90,9 +90,14 @@
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
 
+        /* 庶務席の見た目を少し変える */
+        .seat.type-shomu { border-color: var(--color-red-600); border-width: 3px; }
+        .seat.type-shomu .seat-label { color: var(--color-red-600); font-weight: 700; }
+
         .seat:hover { background-color: var(--color-bg-gray); }
         .seat.active { box-shadow: 0 0 0 4px var(--color-focus-yellow); z-index: 100; }
         .seat.occupied { background-color: #e6f2ff; border-color: var(--color-blue-600); }
+        .seat.type-shomu.occupied { background-color: #fff0f0; border-color: var(--color-red-600); }
 
         .seat-label { font-size: 0.7rem; color: var(--color-text-sub); pointer-events: none; margin-bottom: 2px; }
         .seat-name { font-size: 1.1rem; font-weight: 700; pointer-events: none; text-align: center; line-height: 1.2; width: 90%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -121,9 +126,8 @@
         }
 
         .name-list-btn:hover { background: var(--color-bg-gray); border-color: var(--color-blue-600); }
-        .name-list-btn.clear-btn { grid-column: 1 / -1; background-color: #fff5f5; color: var(--color-error-main); border-color: var(--color-error-main); margin-bottom: 8px; }
+        .name-list-btn.clear-btn { grid-column: 1 / -1; background-color: #fff5f5; color: var(--color-red-600); border-color: var(--color-red-600); margin-bottom: 8px; }
 
-        /* 初期表示は非表示 */
         #maintenanceArea { display: none; }
     </style>
 </head>
@@ -131,7 +135,7 @@
 
 <div class="container">
     <header>
-        <h1>座席管理システム</h1>
+        <h1>座席管理システム (役割別)</h1>
         <button id="maintToggleBtn" class="btn-secondary" onclick="toggleMaintenance()">設定</button>
     </header>
 
@@ -164,9 +168,9 @@
 
 <div id="nameModal" class="modal">
     <div class="modal-content">
-        <h2 style="margin-top:0; border-bottom: 2px solid var(--color-blue-600); padding-bottom: 8px;">利用者を選択</h2>
+        <h2 id="modalTitle" style="margin-top:0; border-bottom: 2px solid var(--color-blue-600); padding-bottom: 8px;">利用者を選択</h2>
         <div class="name-grid">
-            <button class="name-list-btn clear-btn" onclick="selectName('')">× この席を空ける (または選択解除)</button>
+            <button class="name-list-btn clear-btn" onclick="selectName('')">× この席を空ける</button>
             <div id="nameChoices" style="display: contents;"></div>
         </div>
         <button class="btn-secondary" style="width:100%;" onclick="closeModal()">閉じる</button>
@@ -174,8 +178,10 @@
 </div>
 
 <script>
-    const STORAGE_KEY = 'seat_system_v30_dynamic';
-    let names = {}; let pos = {}; let currentOccupants = {};
+    const STORAGE_KEY = 'seat_system_v31_role_split';
+    let names = { shomu: {}, general: {} }; 
+    let pos = {}; 
+    let currentOccupants = {};
     let counts = { shomu: 0, general: 15 };
     let activeSeatId = null;
 
@@ -183,7 +189,8 @@
         const saved = localStorage.getItem(STORAGE_KEY);
         if (saved) {
             const d = JSON.parse(saved);
-            pos = d.pos || {}; names = d.names || {}; 
+            pos = d.pos || {}; 
+            names = d.names || { shomu: {}, general: {} }; 
             counts = d.counts || { shomu: 0, general: 15 };
             currentOccupants = d.currentOccupants || {};
         }
@@ -192,22 +199,16 @@
         updateTimestamp();
     }
 
-    // 設定ボタンの1回目反応を修正
     function toggleMaintenance() {
         const area = document.getElementById('maintenanceArea');
-        // 明示的なスタイルの取得
         const currentDisplay = window.getComputedStyle(area).display;
-        if (currentDisplay === 'none') {
-            area.style.display = 'block';
-        } else {
-            area.style.display = 'none';
-        }
+        area.style.display = (currentDisplay === 'none') ? 'block' : 'none';
     }
 
     function changeCount(role, delta) {
         counts[role] = Math.max(0, Math.min(60, counts[role] + delta));
         renderMaint(); 
-        syncSeats(); // 職員数に連動して座席を再生成
+        syncSeats(); 
     }
 
     function renderMaint() {
@@ -219,7 +220,7 @@
             let items = '';
             for(let i=1; i<=n; i++) {
                 const id = `${role.k}-${i}`;
-                items += `<input type="text" placeholder="${role.l}${i}" value="${names[id] || ''}" onchange="updateName('${id}', this.value)">`;
+                items += `<input type="text" placeholder="${role.l}${i}" value="${names[role.k][id] || ''}" onchange="names['${role.k}']['${id}']=this.value">`;
             }
             container.innerHTML += `
                 <div class="role-group" style="margin-bottom: var(--s-24);">
@@ -235,43 +236,50 @@
         });
     }
 
-    function updateName(id, val) {
-        names[id] = val;
-    }
-
-    // 座席指定ボックスを職員数に連動
     function syncSeats() {
         const area = document.getElementById('seatArea');
         area.innerHTML = '';
         
-        // 合計人数を算出
-        const totalPeopleCount = counts.shomu + counts.general;
-        
-        for(let i=1; i<=totalPeopleCount; i++) {
-            const seatId = `seat-${i}`;
-            const el = document.createElement('div');
-            el.className = 'seat' + (currentOccupants[seatId] ? ' occupied' : '');
-            el.id = seatId;
-            const occupantName = currentOccupants[seatId] || '---';
-            el.innerHTML = `<div class="seat-label">座席 ${i}</div><div class="seat-name">${occupantName}</div>`;
-            
-            // 位置の復元（なければグリッド配置）
-            el.style.left = pos[seatId]?.left || (5 + ((i-1) % 5) * 18) + "%";
-            el.style.top = pos[seatId]?.top || (5 + Math.floor((i-1) / 5) * 18) + "%";
-            
-            makeDraggableAndClickable(el, seatId);
-            area.appendChild(el);
+        // 庶務席の生成
+        for(let i=1; i<=counts.shomu; i++) {
+            createSeat(area, `shomu-${i}`, `庶務席 ${i}`, 'shomu');
+        }
+        // 一般席の生成
+        for(let i=1; i<=counts.general; i++) {
+            createSeat(area, `gen-${i}`, `座席 ${i}`, 'general');
         }
     }
 
-    function openModal(seatId) {
+    function createSeat(parent, id, label, type) {
+        const el = document.createElement('div');
+        el.className = `seat type-${type}` + (currentOccupants[id] ? ' occupied' : '');
+        el.id = id;
+        const occupantName = currentOccupants[id] || '---';
+        el.innerHTML = `<div class="seat-label">${label}</div><div class="seat-name">${occupantName}</div>`;
+        
+        // デフォルト位置の計算（庶務席を優先的に並べる）
+        const index = Array.from(parent.children).length;
+        el.style.left = pos[id]?.left || (5 + (index % 5) * 18) + "%";
+        el.style.top = pos[id]?.top || (5 + Math.floor(index / 5) * 18) + "%";
+        
+        makeDraggableAndClickable(el, id, type);
+        parent.appendChild(el);
+    }
+
+    function openModal(seatId, type) {
         activeSeatId = seatId;
         const container = document.getElementById('nameChoices');
+        const title = document.getElementById('modalTitle');
         container.innerHTML = '';
+        
+        title.innerText = (type === 'shomu') ? '庶務担当者を選択' : '一般職員を選択';
+        
         const alreadySeated = Object.values(currentOccupants);
         const currentInThisSeat = currentOccupants[seatId];
         
-        Object.values(names).forEach(name => {
+        // 該当するタイプのリストのみ表示
+        const targetNames = names[type];
+        Object.values(targetNames).forEach(name => {
             if(!name) return;
             if(alreadySeated.includes(name) && name !== currentInThisSeat) return; 
             const btn = document.createElement('button');
@@ -291,17 +299,15 @@
         saveCurrentState(); syncSeats(); closeModal(); updateTimestamp();
     }
 
-    function makeDraggableAndClickable(el, id) {
+    function makeDraggableAndClickable(el, id, type) {
         let isDragging = false;
         let startX, startY;
         let moved = false;
 
         const onStart = (e) => {
-            isDragging = true;
-            moved = false;
+            isDragging = true; moved = false;
             const c = e.type.includes('touch') ? e.touches[0] : e;
-            startX = c.clientX;
-            startY = c.clientY;
+            startX = c.clientX; startY = c.clientY;
             el.classList.add('active');
         };
 
@@ -310,7 +316,6 @@
             const c = e.type.includes('touch') ? e.touches[0] : e;
             const dx = Math.abs(c.clientX - startX);
             const dy = Math.abs(c.clientY - startY);
-            
             if (dx > 5 || dy > 5) {
                 moved = true;
                 const rect = document.getElementById('seatArea').getBoundingClientRect();
@@ -325,7 +330,6 @@
             if (!isDragging) return;
             isDragging = false;
             el.classList.remove('active');
-
             if (moved) {
                 const snap = 2.5;
                 el.style.left = Math.round(parseFloat(el.style.left) / snap) * snap + "%";
@@ -333,7 +337,7 @@
                 pos[id] = { left: el.style.left, top: el.style.top };
                 saveCurrentState();
             } else {
-                openModal(id);
+                openModal(id, type);
             }
         };
 
@@ -374,7 +378,7 @@
         reader.onload = (e) => {
             try {
                 const d = JSON.parse(e.target.result);
-                pos = d.pos || {}; names = d.names || {}; 
+                pos = d.pos || {}; names = d.names || {shomu:{}, general:{}}; 
                 counts = d.counts || {shomu:0, general:15};
                 currentOccupants = d.currentOccupants || {};
                 saveCurrentState(); location.reload();
