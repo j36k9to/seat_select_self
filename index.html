@@ -108,7 +108,6 @@
             width: 95%; max-width: 600px; max-height: 85vh; overflow-y: auto;
         }
 
-        /* 社員リストのグリッド表示 */
         .name-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
@@ -126,7 +125,7 @@
         .name-list-btn:hover { background: var(--color-bg-gray); border-color: var(--color-blue-600); }
         
         .name-list-btn.clear-btn {
-            grid-column: 1 / -1; /* 一列全部使う */
+            grid-column: 1 / -1;
             background-color: #fff5f5;
             color: var(--color-error-main);
             border-color: var(--color-error-main);
@@ -147,9 +146,16 @@
     <div id="maintenanceArea">
         <section>
             <div id="roleInputs"></div>
-            <div style="display:flex; gap:var(--s-16); flex-wrap:wrap; margin-top: var(--s-32);">
-                <button class="btn-primary" onclick="saveAll()">設定を保存</button>
-                <button class="btn-danger" onclick="resetLayout()">レイアウト初期化</button>
+            
+            <div class="role-group" style="margin-top: var(--s-32);">
+                <h2 style="font-size: 1.25rem; border-left: 4px solid var(--color-blue-600); padding-left: var(--s-8); margin-bottom: var(--s-16);">システム管理</h2>
+                <div style="display:flex; gap:var(--s-16); flex-wrap:wrap;">
+                    <button class="btn-secondary" onclick="exportConfig()">JSON出力</button>
+                    <input type="file" id="importFile" style="display:none" onchange="importConfig(this)">
+                    <button class="btn-secondary" onclick="document.getElementById('importFile').click()">JSON読込</button>
+                    <button class="btn-primary" onclick="saveAll()">設定を保存</button>
+                    <button class="btn-danger" onclick="resetLayout()">レイアウト初期化</button>
+                </div>
             </div>
         </section>
     </div>
@@ -167,18 +173,16 @@
 <div id="nameModal" class="modal">
     <div class="modal-content">
         <h2 style="margin-top:0; border-bottom: 2px solid var(--color-blue-600); padding-bottom: 8px;">利用者を選択</h2>
-        
         <div class="name-grid">
             <button class="name-list-btn clear-btn" onclick="selectName('')">× この席を空ける (または選択解除)</button>
             <div id="nameChoices" style="display: contents;"></div>
         </div>
-        
         <button class="btn-secondary" style="width:100%;" onclick="closeModal()">閉じる</button>
     </div>
 </div>
 
 <script>
-    const STORAGE_KEY = 'seat_system_free_v27';
+    const STORAGE_KEY = 'seat_system_free_v28';
     let names = {}; let pos = {}; let currentOccupants = {};
     let counts = { shomu: 0, general: 15 };
     let activeSeatId = null;
@@ -230,7 +234,6 @@
         const area = document.getElementById('seatArea');
         area.innerHTML = '';
         const totalSeats = 20; 
-        
         for(let i=1; i<=totalSeats; i++) {
             const seatId = `seat-${i}`;
             const el = document.createElement('div');
@@ -250,27 +253,17 @@
         activeSeatId = seatId;
         const container = document.getElementById('nameChoices');
         container.innerHTML = '';
-        
-        // 現在他の席に座っている社員のリストを作成
         const alreadySeated = Object.values(currentOccupants);
         const currentInThisSeat = currentOccupants[seatId];
-
-        // 名簿から選択肢を生成
         Object.values(names).forEach(name => {
             if(!name) return;
-            
-            // すでに他の席に座っている人は表示しない（ただし、今この席に座っている本人は表示する）
-            if(alreadySeated.includes(name) && name !== currentInThisSeat) {
-                return; 
-            }
-
+            if(alreadySeated.includes(name) && name !== currentInThisSeat) return; 
             const btn = document.createElement('button');
             btn.className = 'name-list-btn';
             btn.innerText = name;
             btn.onclick = () => selectName(name);
             container.appendChild(btn);
         });
-
         document.getElementById('nameModal').style.display = 'flex';
     }
 
@@ -279,11 +272,7 @@
     function selectName(name) {
         if(name === '') delete currentOccupants[activeSeatId];
         else currentOccupants[activeSeatId] = name;
-        
-        saveCurrentState();
-        syncSeats();
-        closeModal();
-        updateTimestamp();
+        saveCurrentState(); syncSeats(); closeModal(); updateTimestamp();
     }
 
     function makeDraggable(el, id) {
@@ -310,14 +299,12 @@
         };
         document.addEventListener('mousemove', move);
         document.addEventListener('mouseup', stop);
+        document.addEventListener('touchend', stop);
     }
 
     function clearAllSeats() {
         if(confirm('すべての座席を空席にしますか？')) {
-            currentOccupants = {};
-            saveCurrentState();
-            syncSeats();
-            updateTimestamp();
+            currentOccupants = {}; saveCurrentState(); syncSeats(); updateTimestamp();
         }
     }
 
@@ -332,6 +319,26 @@
 
     function saveAll() { saveCurrentState(); alert("設定を保存しました。"); location.reload(); }
     function resetLayout() { if(confirm('レイアウトを初期化しますか？')) { pos = {}; syncSeats(); saveCurrentState(); } }
+
+    function exportConfig() {
+        const blob = new Blob([JSON.stringify({pos, names, counts, currentOccupants})], {type: 'application/json'});
+        const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+        a.download = "seat_layout_backup.json"; a.click();
+    }
+
+    function importConfig(input) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const d = JSON.parse(e.target.result);
+                pos = d.pos || {}; names = d.names || {}; 
+                counts = d.counts || {shomu:0, general:15};
+                currentOccupants = d.currentOccupants || {};
+                saveCurrentState(); location.reload();
+            } catch (err) { alert("有効なJSONファイルではありません。"); }
+        };
+        reader.readAsText(input.files[0]);
+    }
 
     init();
 </script>
