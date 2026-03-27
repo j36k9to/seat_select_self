@@ -86,17 +86,17 @@
             position: absolute; width: 13%; height: 13%;
             border: 2px solid var(--color-border-main); background: #ffffff;
             display: flex; flex-direction: column; align-items: center; justify-content: center;
-            cursor: pointer; z-index: 10; transition: background-color 0.2s;
+            cursor: pointer; z-index: 10; transition: background-color 0.2s, box-shadow 0.2s;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
 
         .seat:hover { background-color: var(--color-bg-gray); }
+        .seat.active { box-shadow: 0 0 0 4px var(--color-focus-yellow); z-index: 100; }
         .seat.occupied { background-color: #e6f2ff; border-color: var(--color-blue-600); }
 
         .seat-label { font-size: 0.7rem; color: var(--color-text-sub); pointer-events: none; margin-bottom: 2px; }
         .seat-name { font-size: 1.1rem; font-weight: 700; pointer-events: none; text-align: center; line-height: 1.2; width: 90%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-        /* 名前選択モーダル */
         .modal {
             display: none; position: fixed; z-index: 2000; left: 0; top: 0;
             width: 100%; height: 100%; background-color: rgba(0,0,0,0.5);
@@ -109,10 +109,8 @@
         }
 
         .name-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-            gap: 12px;
-            margin: 20px 0;
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+            gap: 12px; margin: 20px 0;
         }
 
         .name-list-btn {
@@ -123,14 +121,7 @@
         }
 
         .name-list-btn:hover { background: var(--color-bg-gray); border-color: var(--color-blue-600); }
-        
-        .name-list-btn.clear-btn {
-            grid-column: 1 / -1;
-            background-color: #fff5f5;
-            color: var(--color-error-main);
-            border-color: var(--color-error-main);
-            margin-bottom: 8px;
-        }
+        .name-list-btn.clear-btn { grid-column: 1 / -1; background-color: #fff5f5; color: var(--color-error-main); border-color: var(--color-error-main); margin-bottom: 8px; }
 
         #maintenanceArea { display: none; }
     </style>
@@ -182,7 +173,7 @@
 </div>
 
 <script>
-    const STORAGE_KEY = 'seat_system_free_v28';
+    const STORAGE_KEY = 'seat_system_free_v29_stable';
     let names = {}; let pos = {}; let currentOccupants = {};
     let counts = { shomu: 0, general: 15 };
     let activeSeatId = null;
@@ -243,8 +234,8 @@
             el.innerHTML = `<div class="seat-label">座席 ${i}</div><div class="seat-name">${occupantName}</div>`;
             el.style.left = pos[seatId]?.left || (5 + ((i-1) % 5) * 18) + "%";
             el.style.top = pos[seatId]?.top || (5 + Math.floor((i-1) / 5) * 18) + "%";
-            el.onclick = () => openModal(seatId);
-            makeDraggable(el, seatId);
+            
+            makeDraggableAndClickable(el, seatId);
             area.appendChild(el);
         }
     }
@@ -275,31 +266,64 @@
         saveCurrentState(); syncSeats(); closeModal(); updateTimestamp();
     }
 
-    function makeDraggable(el, id) {
+    // ドラッグとクリックを分離する改良版
+    function makeDraggableAndClickable(el, id) {
         let isDragging = false;
-        const move = (e) => {
-            if (!isDragging) return;
-            const rect = document.getElementById('seatArea').getBoundingClientRect();
+        let startX, startY;
+        let moved = false;
+
+        const onStart = (e) => {
+            isDragging = true;
+            moved = false;
             const c = e.type.includes('touch') ? e.touches[0] : e;
-            let xP = ((c.clientX - rect.left) / rect.width) * 100 - 6.5;
-            let yP = ((c.clientY - rect.top) / rect.height) * 100 - 6.5;
-            el.style.left = Math.max(0, Math.min(xP, 87)) + "%";
-            el.style.top = Math.max(0, Math.min(yP, 87)) + "%";
+            startX = c.clientX;
+            startY = c.clientY;
+            el.classList.add('active');
         };
-        const stop = () => {
-            if (!isDragging) return; isDragging = false;
-            const snap = 2.5;
-            el.style.left = Math.round(parseFloat(el.style.left) / snap) * snap + "%";
-            el.style.top = Math.round(parseFloat(el.style.top) / snap) * snap + "%";
-            pos[id] = { left: el.style.left, top: el.style.top };
-            saveCurrentState();
+
+        const onMove = (e) => {
+            if (!isDragging) return;
+            const c = e.type.includes('touch') ? e.touches[0] : e;
+            const dx = Math.abs(c.clientX - startX);
+            const dy = Math.abs(c.clientY - startY);
+            
+            // 5px以上動いたら「移動」とみなす
+            if (dx > 5 || dy > 5) {
+                moved = true;
+                const rect = document.getElementById('seatArea').getBoundingClientRect();
+                let xP = ((c.clientX - rect.left) / rect.width) * 100 - 6.5;
+                let yP = ((c.clientY - rect.top) / rect.height) * 100 - 6.5;
+                el.style.left = Math.max(0, Math.min(xP, 87)) + "%";
+                el.style.top = Math.max(0, Math.min(yP, 87)) + "%";
+            }
         };
-        el.onmousedown = el.ontouchstart = (e) => { 
-            if(e.target === el) { isDragging = true; el.style.zIndex = 1000; }
+
+        const onEnd = () => {
+            if (!isDragging) return;
+            isDragging = false;
+            el.classList.remove('active');
+
+            if (moved) {
+                // 移動が発生した場合のみ位置を保存
+                const snap = 2.5;
+                el.style.left = Math.round(parseFloat(el.style.left) / snap) * snap + "%";
+                el.style.top = Math.round(parseFloat(el.style.top) / snap) * snap + "%";
+                pos[id] = { left: el.style.left, top: el.style.top };
+                saveCurrentState();
+            } else {
+                // 移動していなければ「クリック」として扱う
+                openModal(id);
+            }
         };
-        document.addEventListener('mousemove', move);
-        document.addEventListener('mouseup', stop);
-        document.addEventListener('touchend', stop);
+
+        el.addEventListener('mousedown', onStart);
+        el.addEventListener('touchstart', onStart, { passive: true });
+        
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('touchmove', onMove, { passive: false });
+        
+        document.addEventListener('mouseup', onEnd);
+        document.addEventListener('touchend', onEnd);
     }
 
     function clearAllSeats() {
